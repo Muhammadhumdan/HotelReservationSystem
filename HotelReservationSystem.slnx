@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HotelReservation.Shared/HotelReservation.Shared.csproj" />
+    <Project Path="src/HotelReservation.Api/HotelReservation.Api.csproj" />
+    <Project Path="src/HotelReservation.Client/HotelReservation.Client.csproj" />
+  </Folder>
+</Solution>

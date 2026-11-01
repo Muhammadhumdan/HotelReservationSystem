@@ -1,0 +1,118 @@
+@page "/admin/room-types"
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<PageTitle>Room types</PageTitle>
+<RequireRole Role="admin">
+    <h1>Room types</h1>
+    <Notice Error="@error" Success="@success" />
+
+    <section class="panel">
+        <h2>@(editingId is null ? "Add a room type" : "Edit room type")</h2>
+        <EditForm Model="form" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="form-grid">
+                <label>Name <InputText @bind-Value="form.Name" /></label>
+                <label>Price per night (PKR) <InputNumber @bind-Value="form.PricePerNight" /></label>
+                <label>Capacity (guests) <InputNumber @bind-Value="form.Capacity" /></label>
+                <label class="wide">Description <InputTextArea @bind-Value="form.Description" /></label>
+            </div>
+            <div class="actions">
+                <button class="btn primary" type="submit">Save room type</button>
+                @if (editingId is not null)
+                {
+                    <button class="btn" type="button" @onclick="ResetForm">Cancel</button>
+                }
+            </div>
+        </EditForm>
+    </section>
+
+    <div class="filters">
+        <label>Search by name <input @bind="search" @bind:after="LoadAsync" placeholder="e.g. Deluxe" /></label>
+    </div>
+
+    @if (items.Count == 0)
+    {
+        <p class="empty">No room types found.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Name</th><th>Price per night</th><th>Guests</th><th>Rooms</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var t in items)
+                    {
+                        <tr>
+                            <td>@t.Name<div class="muted">@t.Description</div></td>
+                            <td>@Fmt.Money(t.PricePerNight)</td>
+                            <td>@t.Capacity</td>
+                            <td>@t.RoomCount</td>
+                            <td class="row-actions">
+                                <button class="btn small" @onclick="() => Edit(t)">Edit</button>
+                                <button class="btn small danger" @onclick="() => DeleteAsync(t)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</RequireRole>
+
+@code {
+    private List<RoomTypeDto> items = new();
+    private RoomTypeRequest form = new();
+    private int? editingId;          // null = adding a new one, number = editing that one
+    private string? search, error, success;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try { items = await Api.GetRoomTypesAsync(search); }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private async Task SaveAsync()
+    {
+        error = success = null;
+        try
+        {
+            if (editingId is null) await Api.CreateRoomTypeAsync(form);
+            else await Api.UpdateRoomTypeAsync(editingId.Value, form);
+
+            success = editingId is null ? "Room type added." : "Room type updated.";
+            ResetForm();
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private void Edit(RoomTypeDto t)
+    {
+        editingId = t.Id;
+        form = new RoomTypeRequest { Name = t.Name, Description = t.Description, PricePerNight = t.PricePerNight, Capacity = t.Capacity };
+        error = success = null;
+    }
+
+    private void ResetForm()
+    {
+        editingId = null;
+        form = new RoomTypeRequest();
+    }
+
+    private async Task DeleteAsync(RoomTypeDto t)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Delete room type '{t.Name}'?")) return;
+        error = success = null;
+        try
+        {
+            await Api.DeleteRoomTypeAsync(t.Id);
+            success = "Room type deleted.";
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+}

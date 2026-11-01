@@ -1,0 +1,148 @@
+@page "/admin/rooms"
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<PageTitle>Rooms</PageTitle>
+<RequireRole Role="admin">
+    <h1>Rooms</h1>
+    <Notice Error="@error" Success="@success" />
+
+    <section class="panel">
+        <h2>@(editingId is null ? "Add a room" : "Edit room")</h2>
+        <EditForm Model="form" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="form-grid">
+                <label>Room number <InputText @bind-Value="form.RoomNumber" /></label>
+                <label>Floor <InputNumber @bind-Value="form.Floor" /></label>
+                <label>Room type
+                    <InputSelect @bind-Value="form.RoomTypeId">
+                        <option value="0">Choose a type...</option>
+                        @foreach (var t in types)
+                        {
+                            <option value="@t.Id">@t.Name (@Fmt.Money(t.PricePerNight))</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label class="check"><InputCheckbox @bind-Value="form.IsActive" /> Open for booking (untick for maintenance)</label>
+            </div>
+            <div class="actions">
+                <button class="btn primary" type="submit">Save room</button>
+                @if (editingId is not null)
+                {
+                    <button class="btn" type="button" @onclick="ResetForm">Cancel</button>
+                }
+            </div>
+        </EditForm>
+    </section>
+
+    <div class="filters">
+        <label>Room number <input @bind="search" @bind:after="LoadAsync" placeholder="e.g. 20" /></label>
+        <label>Type
+            <select @bind="filterTypeId" @bind:after="LoadAsync">
+                <option value="">All types</option>
+                @foreach (var t in types)
+                {
+                    <option value="@t.Id">@t.Name</option>
+                }
+            </select>
+        </label>
+    </div>
+
+    @if (items.Count == 0)
+    {
+        <p class="empty">No rooms found.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Room</th><th>Floor</th><th>Type</th><th>Price per night</th><th>Guests</th><th>Today</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in items)
+                    {
+                        <tr>
+                            <td>@r.RoomNumber</td>
+                            <td>@r.Floor</td>
+                            <td>@r.RoomTypeName</td>
+                            <td>@Fmt.Money(r.PricePerNight)</td>
+                            <td>@r.Capacity</td>
+                            <td>
+                                @if (!r.IsActive) { <span class="badge cancelled">Maintenance</span> }
+                                else if (r.IsOccupiedToday) { <span class="badge checkedin">Occupied today</span> }
+                                else { <span class="badge confirmed">Free today</span> }
+                            </td>
+                            <td class="row-actions">
+                                <button class="btn small" @onclick="() => Edit(r)">Edit</button>
+                                <button class="btn small danger" @onclick="() => DeleteAsync(r)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</RequireRole>
+
+@code {
+    private List<RoomDto> items = new();
+    private List<RoomTypeDto> types = new();
+    private RoomRequest form = new();
+    private int? editingId;
+    private int? filterTypeId;
+    private string? search, error, success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { types = await Api.GetRoomTypesAsync(); }
+        catch (ApiException ex) { error = ex.Message; }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try { items = await Api.GetRoomsAsync(filterTypeId, search); }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private async Task SaveAsync()
+    {
+        error = success = null;
+        try
+        {
+            if (editingId is null) await Api.CreateRoomAsync(form);
+            else await Api.UpdateRoomAsync(editingId.Value, form);
+
+            success = editingId is null ? "Room added." : "Room updated.";
+            ResetForm();
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private void Edit(RoomDto r)
+    {
+        editingId = r.Id;
+        form = new RoomRequest { RoomNumber = r.RoomNumber, Floor = r.Floor, RoomTypeId = r.RoomTypeId, IsActive = r.IsActive };
+        error = success = null;
+    }
+
+    private void ResetForm()
+    {
+        editingId = null;
+        form = new RoomRequest();
+    }
+
+    private async Task DeleteAsync(RoomDto r)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Delete room {r.RoomNumber}?")) return;
+        error = success = null;
+        try
+        {
+            await Api.DeleteRoomAsync(r.Id);
+            success = "Room deleted.";
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+}

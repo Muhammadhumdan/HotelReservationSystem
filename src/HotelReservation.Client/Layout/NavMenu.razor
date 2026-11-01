@@ -1,0 +1,49 @@
+@implements IDisposable
+@inject SessionState Session
+@inject NavigationManager Nav
+
+<nav class="nav" aria-label="Main">
+    @if (Session.IsAdmin)
+    {
+        <NavLink href="admin/reservations">Reservations</NavLink>
+        <NavLink href="admin/rooms">Rooms</NavLink>
+        <NavLink href="admin/room-types">Room types</NavLink>
+        <NavLink href="admin/customers">Customers</NavLink>
+    }
+    else if (Session.IsCustomer)
+    {
+        <NavLink href="search">Find a room</NavLink>
+        <NavLink href="my-bookings">My bookings</NavLink>
+    }
+
+    <span class="spacer"></span>
+
+    @if (Session.IsAdmin)
+    {
+        <span class="who">Administrator</span>
+        <button class="btn small" @onclick="SignOutAsync">Sign out</button>
+    }
+    else if (Session.IsCustomer)
+    {
+        <span class="who">@Session.Customer!.FullName</span>
+        <button class="btn small" @onclick="SignOutAsync">Sign out</button>
+    }
+    else
+    {
+        <NavLink href="signin">Sign in</NavLink>
+    }
+</nav>
+
+@code {
+    protected override void OnInitialized() => Session.Changed += OnSessionChanged;
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task SignOutAsync()
+    {
+        await Session.SignOutAsync();
+        Nav.NavigateTo("");
+    }
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+}

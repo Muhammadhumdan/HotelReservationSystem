@@ -1,0 +1,14 @@
+@* Shows a red error box and/or a green success box. Pages just pass the text. *@
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="notice error" role="alert">@Error</div>
+}
+@if (!string.IsNullOrEmpty(Success))
+{
+    <div class="notice success" role="status">@Success</div>
+}
+
+@code {
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string? Success { get; set; }
+}

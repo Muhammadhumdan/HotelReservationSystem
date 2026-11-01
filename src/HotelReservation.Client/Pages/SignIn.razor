@@ -1,0 +1,86 @@
+@page "/signin"
+@using System.ComponentModel.DataAnnotations
+@inject ApiClient Api
+@inject SessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>Sign in</PageTitle>
+<h1>Sign in</h1>
+<Notice Error="@error" />
+
+<div class="two-col">
+    <section class="panel">
+        <h2>I already have an account</h2>
+        <EditForm Model="signIn" OnValidSubmit="SignInAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label>Email
+                <InputText type="email" @bind-Value="signIn.Email" />
+            </label>
+            <div class="actions"><button class="btn primary" type="submit" disabled="@busy">Sign in</button></div>
+        </EditForm>
+        <p class="muted">Try the sample guest: ali@example.com</p>
+    </section>
+
+    <section class="panel">
+        <h2>Create a guest account</h2>
+        <EditForm Model="register" OnValidSubmit="RegisterAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label>Full name <InputText @bind-Value="register.FullName" /></label>
+            <label>Email <InputText type="email" @bind-Value="register.Email" /></label>
+            <label>Phone <InputText @bind-Value="register.Phone" /></label>
+            <div class="actions"><button class="btn primary" type="submit" disabled="@busy">Create account</button></div>
+        </EditForm>
+    </section>
+</div>
+
+@code {
+    private readonly SignInModel signIn = new();
+    private readonly CustomerRequest register = new();
+    private string? error;
+    private bool busy;
+
+    // Tiny model just for the email box on the left.
+    private class SignInModel
+    {
+        [Required(ErrorMessage = "Email is required.")]
+        [EmailAddress(ErrorMessage = "Please enter a valid email address.")]
+        public string Email { get; set; } = "";
+    }
+
+    private async Task SignInAsync()
+    {
+        await RunAsync(async () =>
+        {
+            var customer = await Api.GetCustomerByEmailAsync(signIn.Email);
+            if (customer is null)
+            {
+                error = "No account uses that email. Create one on the right.";
+                return;
+            }
+            await Session.SignInAsCustomerAsync(customer);
+            Nav.NavigateTo("search");
+        });
+    }
+
+    private async Task RegisterAsync()
+    {
+        await RunAsync(async () =>
+        {
+            var customer = await Api.CreateCustomerAsync(register);
+            await Session.SignInAsCustomerAsync(customer);
+            Nav.NavigateTo("search");
+        });
+    }
+
+    // Runs an action, shows API errors nicely, and blocks double-clicks while working.
+    private async Task RunAsync(Func<Task> action)
+    {
+        busy = true;
+        error = null;
+        try { await action(); }
+        catch (ApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

@@ -1,0 +1,135 @@
+@page "/search"
+@using System.ComponentModel.DataAnnotations
+@inject ApiClient Api
+@inject SessionState Session
+
+<PageTitle>Find a room</PageTitle>
+<RequireRole Role="customer">
+    <h1>Find a room</h1>
+    <Notice Error="@error" Success="@success" />
+
+    <section class="panel">
+        <EditForm Model="search" OnValidSubmit="SearchAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="form-grid">
+                <label>Check-in <InputDate @bind-Value="search.CheckIn" /></label>
+                <label>Check-out <InputDate @bind-Value="search.CheckOut" /></label>
+                <label>Guests <InputNumber @bind-Value="search.Guests" /></label>
+                <label>Room type
+                    <InputSelect @bind-Value="search.RoomTypeId">
+                        <option value="0">Any type</option>
+                        @foreach (var t in roomTypes)
+                        {
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>Max price per night (PKR) <InputNumber @bind-Value="search.MaxPrice" /></label>
+            </div>
+            <div class="actions"><button class="btn primary" type="submit" disabled="@busy">Search rooms</button></div>
+        </EditForm>
+    </section>
+
+    @if (results is not null)
+    {
+        if (results.Count == 0)
+        {
+            <p class="empty">No room is free for those dates. Try other dates, fewer guests or a different room type.</p>
+        }
+        else
+        {
+            <p class="muted">@results.Count room(s) free from @Fmt.Date(searchedIn) to @Fmt.Date(searchedOut) (@results[0].Nights night(s)).</p>
+            <div class="cards">
+                @foreach (var room in results)
+                {
+                    <article class="card">
+                        <h3>Room @room.RoomNumber <span class="muted">· floor @room.Floor</span></h3>
+                        <p class="type">@room.RoomTypeName, up to @room.Capacity guest(s)</p>
+                        <p>@room.Description</p>
+                        <p class="price">@Fmt.Money(room.TotalPrice) <span class="muted">total (@Fmt.Money(room.PricePerNight) per night)</span></p>
+                        <button class="btn primary" disabled="@busy" @onclick="() => BookAsync(room)">Book this room</button>
+                    </article>
+                }
+            </div>
+        }
+    }
+</RequireRole>
+
+@code {
+    private SearchModel search = new();
+    private List<RoomTypeDto> roomTypes = new();
+    private List<AvailableRoomDto>? results;
+    private DateOnly searchedIn, searchedOut;     // the dates the results belong to
+    private string? error, success;
+    private bool busy;
+
+    // The search form. IValidatableObject lets us compare the two dates.
+    private class SearchModel : IValidatableObject
+    {
+        public DateOnly CheckIn { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public DateOnly CheckOut { get; set; } = DateOnly.FromDateTime(DateTime.Today).AddDays(1);
+
+        [Range(1, 10, ErrorMessage = "Guests must be between 1 and 10.")]
+        public int Guests { get; set; } = 1;
+
+        public int RoomTypeId { get; set; }          // 0 = any type
+        public decimal? MaxPrice { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext context)
+        {
+            if (CheckIn < DateOnly.FromDateTime(DateTime.Today))
+                yield return new ValidationResult("Check-in date cannot be in the past.", new[] { nameof(CheckIn) });
+            if (CheckOut <= CheckIn)
+                yield return new ValidationResult("Check-out must be after check-in.", new[] { nameof(CheckOut) });
+            if (CheckOut.DayNumber - CheckIn.DayNumber > 30)
+                yield return new ValidationResult("You can book at most 30 nights at a time.", new[] { nameof(CheckOut) });
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { roomTypes = await Api.GetRoomTypesAsync(); }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private async Task SearchAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            results = await Api.SearchAvailableRoomsAsync(search.CheckIn, search.CheckOut, search.Guests,
+                search.RoomTypeId == 0 ? null : search.RoomTypeId, search.MaxPrice);
+            searchedIn = search.CheckIn;
+            searchedOut = search.CheckOut;
+        }
+        catch (ApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task BookAsync(AvailableRoomDto room)
+    {
+        busy = true;
+        error = success = null;
+        try
+        {
+            var booking = new ReservationRequest
+            {
+                CustomerId = Session.Customer!.Id,
+                RoomId = room.RoomId,
+                CheckInDate = searchedIn,
+                CheckOutDate = searchedOut,
+                Guests = search.Guests
+            };
+            await Api.CreateReservationAsync(booking);
+            success = $"Booked! Room {room.RoomNumber} is yours from {Fmt.Date(searchedIn)} to {Fmt.Date(searchedOut)}. See it under My bookings.";
+
+            // Search again: the room we just booked disappears, proving availability updated automatically.
+            results = await Api.SearchAvailableRoomsAsync(searchedIn, searchedOut, search.Guests,
+                search.RoomTypeId == 0 ? null : search.RoomTypeId, search.MaxPrice);
+        }
+        catch (ApiException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

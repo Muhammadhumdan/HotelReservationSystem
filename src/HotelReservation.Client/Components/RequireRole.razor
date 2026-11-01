@@ -1,0 +1,39 @@
+@* Shows its content only to the right kind of user ("admin" or "customer"). Others get a friendly message. *@
+@implements IDisposable
+@inject SessionState Session
+
+@if (!_ready)
+{
+    <p class="muted">Loading...</p>
+}
+else if (Allowed)
+{
+    @ChildContent
+}
+else
+{
+    <h1>@(Role == "admin" ? "Administrator area" : "Guest area")</h1>
+    <div class="notice error">
+        @(Role == "admin" ? "This page is for hotel administrators." : "Please sign in as a guest to use this page.")
+        <a href="@(Role == "admin" ? "/" : "/signin")">@(Role == "admin" ? "Go to the home page" : "Sign in")</a>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Role { get; set; } = "customer";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _ready;
+    private bool Allowed => Role == "admin" ? Session.IsAdmin : Session.IsCustomer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await Session.EnsureInitializedAsync();
+        _ready = true;
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+}

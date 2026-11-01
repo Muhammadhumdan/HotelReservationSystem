@@ -1,0 +1,64 @@
+@page "/"
+@inject SessionState Session
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Margalla Stay</PageTitle>
+
+<section class="hero">
+    <h1>Margalla Stay</h1>
+    <p class="lead">Pick your dates, see which rooms are really free, and book in a minute.</p>
+</section>
+
+@if (Session.IsCustomer)
+{
+    <p>Welcome back, <strong>@Session.Customer!.FullName</strong>.</p>
+    <div class="actions">
+        <a class="btn primary" href="search">Find a room</a>
+        <a class="btn" href="my-bookings">My bookings</a>
+    </div>
+}
+else if (Session.IsAdmin)
+{
+    <p>You are signed in as <strong>administrator</strong>.</p>
+    <div class="actions">
+        <a class="btn primary" href="admin/reservations">Reservations</a>
+        <a class="btn" href="admin/rooms">Rooms</a>
+        <a class="btn" href="admin/room-types">Room types</a>
+        <a class="btn" href="admin/customers">Customers</a>
+    </div>
+}
+else
+{
+    <div class="two-col">
+        <section class="panel">
+            <h2>I want to book a room</h2>
+            <p>Sign in with your email, or create a guest account in a few seconds.</p>
+            <a class="btn primary" href="signin">Sign in as a guest</a>
+        </section>
+        <section class="panel">
+            <h2>I run the hotel</h2>
+            <p>Manage rooms, prices, guests and every reservation.</p>
+            <button class="btn" @onclick="AdminAsync">Continue as administrator</button>
+        </section>
+    </div>
+    <p class="muted">Demo mode: there are no passwords in this practice project.</p>
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await Session.EnsureInitializedAsync();
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task AdminAsync()
+    {
+        await Session.SignInAsAdminAsync();
+        Nav.NavigateTo("admin/reservations");
+    }
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+}

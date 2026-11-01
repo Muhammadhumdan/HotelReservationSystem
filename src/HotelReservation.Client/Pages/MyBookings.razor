@@ -1,0 +1,94 @@
+@page "/my-bookings"
+@inject ApiClient Api
+@inject SessionState Session
+@inject IJSRuntime Js
+
+<PageTitle>My bookings</PageTitle>
+<RequireRole Role="customer">
+    <h1>My bookings</h1>
+    <Notice Error="@error" Success="@success" />
+
+    <div class="filters">
+        <label>Show
+            <select @bind="filterStatus" @bind:after="LoadAsync">
+                <option value="">All bookings</option>
+                @foreach (var s in Enum.GetValues<ReservationStatus>())
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </label>
+    </div>
+
+    @if (loading)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else if (items.Count == 0)
+    {
+        <p class="empty">No bookings yet. <a href="search">Find a room</a> to make your first one.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Room</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Guests</th><th>Total</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in items)
+                    {
+                        <tr>
+                            <td>@r.RoomNumber <span class="muted">@r.RoomTypeName</span></td>
+                            <td>@Fmt.Date(r.CheckInDate)</td>
+                            <td>@Fmt.Date(r.CheckOutDate)</td>
+                            <td>@r.Nights</td>
+                            <td>@r.Guests</td>
+                            <td>@Fmt.Money(r.TotalPrice)</td>
+                            <td><StatusBadge Status="r.Status" /></td>
+                            <td>
+                                @if (r.Status == ReservationStatus.Confirmed)
+                                {
+                                    <button class="btn small danger" @onclick="() => CancelAsync(r)">Cancel</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</RequireRole>
+
+@code {
+    private List<ReservationDto> items = new();
+    private ReservationStatus? filterStatus;
+    private string? error, success;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureInitializedAsync();   // wait until we know who is signed in
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsCustomer) { loading = false; return; }
+        loading = true;
+        try { items = await Api.GetReservationsAsync(customerId: Session.Customer!.Id, status: filterStatus); }
+        catch (ApiException ex) { error = ex.Message; }
+        loading = false;
+    }
+
+    private async Task CancelAsync(ReservationDto r)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Cancel your booking for room {r.RoomNumber} ({Fmt.Date(r.CheckInDate)})?")) return;
+        error = success = null;
+        try
+        {
+            await Api.ChangeReservationStatusAsync(r.Id, ReservationStatus.Cancelled);
+            success = "Your booking was cancelled and the room is free for other guests again.";
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+}

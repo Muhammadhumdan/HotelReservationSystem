@@ -1,0 +1,177 @@
+@page "/admin/reservations"
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<PageTitle>Reservations</PageTitle>
+<RequireRole Role="admin">
+    <h1>Reservations</h1>
+    <Notice Error="@error" Success="@success" />
+
+    <section class="panel">
+        <h2>New reservation</h2>
+        <EditForm Model="form" OnValidSubmit="CreateAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="form-grid">
+                <label>Customer
+                    <InputSelect @bind-Value="form.CustomerId">
+                        <option value="0">Choose a customer...</option>
+                        @foreach (var c in customers)
+                        {
+                            <option value="@c.Id">@c.FullName (@c.Email)</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>Check-in <InputDate @bind-Value="form.CheckInDate" /></label>
+                <label>Check-out <InputDate @bind-Value="form.CheckOutDate" /></label>
+                <label>Guests <InputNumber @bind-Value="form.Guests" /></label>
+            </div>
+            <div class="actions">
+                <button class="btn" type="button" @onclick="FindRoomsAsync">Find free rooms</button>
+            </div>
+
+            @if (freeRooms is not null)
+            {
+                if (freeRooms.Count == 0)
+                {
+                    <p class="empty">No free room for these dates and guests.</p>
+                }
+                else
+                {
+                    <div class="form-grid">
+                        <label class="wide">Free room
+                            <InputSelect @bind-Value="form.RoomId">
+                                <option value="0">Choose a room...</option>
+                                @foreach (var r in freeRooms)
+                                {
+                                    <option value="@r.RoomId">Room @r.RoomNumber, @r.RoomTypeName, @Fmt.Money(r.TotalPrice) total</option>
+                                }
+                            </InputSelect>
+                        </label>
+                    </div>
+                    <div class="actions"><button class="btn primary" type="submit">Create reservation</button></div>
+                }
+            }
+        </EditForm>
+    </section>
+
+    <div class="filters">
+        <label>Guest or room <input @bind="search" @bind:after="LoadAsync" placeholder="name or room number" /></label>
+        <label>Status
+            <select @bind="filterStatus" @bind:after="LoadAsync">
+                <option value="">All</option>
+                @foreach (var s in Enum.GetValues<ReservationStatus>())
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </label>
+        <label>Stays from <input type="date" @bind="fromDate" @bind:format="yyyy-MM-dd" @bind:after="LoadAsync" /></label>
+        <label>Stays until <input type="date" @bind="toDate" @bind:format="yyyy-MM-dd" @bind:after="LoadAsync" /></label>
+    </div>
+
+    @if (items.Count == 0)
+    {
+        <p class="empty">No reservations match these filters.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>#</th><th>Guest</th><th>Room</th><th>Check-in</th><th>Check-out</th><th>Total</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in items)
+                    {
+                        <tr>
+                            <td>@r.Id</td>
+                            <td>@r.CustomerName<div class="muted">@r.Guests guest(s)</div></td>
+                            <td>@r.RoomNumber <span class="muted">@r.RoomTypeName</span></td>
+                            <td>@Fmt.Date(r.CheckInDate)</td>
+                            <td>@Fmt.Date(r.CheckOutDate) <span class="muted">(@r.Nights n)</span></td>
+                            <td>@Fmt.Money(r.TotalPrice)</td>
+                            <td><StatusBadge Status="r.Status" /></td>
+                            <td class="row-actions">
+                                @if (r.Status == ReservationStatus.Confirmed)
+                                {
+                                    <button class="btn small" @onclick="() => ChangeAsync(r, ReservationStatus.CheckedIn)">Check in</button>
+                                    <button class="btn small danger" @onclick="() => ChangeAsync(r, ReservationStatus.Cancelled)">Cancel</button>
+                                }
+                                else if (r.Status == ReservationStatus.CheckedIn)
+                                {
+                                    <button class="btn small" @onclick="() => ChangeAsync(r, ReservationStatus.CheckedOut)">Check out</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</RequireRole>
+
+@code {
+    private List<ReservationDto> items = new();
+    private List<CustomerDto> customers = new();
+    private List<AvailableRoomDto>? freeRooms;
+
+    private ReservationRequest form = NewForm();
+    private string? search, error, success;
+    private ReservationStatus? filterStatus;
+    private DateOnly? fromDate, toDate;
+
+    private static ReservationRequest NewForm() => new()
+    {
+        CheckInDate = DateOnly.FromDateTime(DateTime.Today),
+        CheckOutDate = DateOnly.FromDateTime(DateTime.Today).AddDays(1)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { customers = await Api.GetCustomersAsync(); }
+        catch (ApiException ex) { error = ex.Message; }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try { items = await Api.GetReservationsAsync(null, filterStatus, fromDate, toDate, search); }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private async Task FindRoomsAsync()
+    {
+        error = success = null;
+        form.RoomId = 0;
+        try { freeRooms = await Api.SearchAvailableRoomsAsync(form.CheckInDate, form.CheckOutDate, form.Guests); }
+        catch (ApiException ex) { error = ex.Message; freeRooms = null; }
+    }
+
+    private async Task CreateAsync()
+    {
+        error = success = null;
+        try
+        {
+            var created = await Api.CreateReservationAsync(form);
+            success = $"Reservation #{created.Id} created for {created.CustomerName}, room {created.RoomNumber}.";
+            form = NewForm();
+            freeRooms = null;
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private async Task ChangeAsync(ReservationDto r, ReservationStatus newStatus)
+    {
+        if (newStatus == ReservationStatus.Cancelled &&
+            !await Js.InvokeAsync<bool>("confirm", $"Cancel reservation #{r.Id} for {r.CustomerName}?")) return;
+
+        error = success = null;
+        try
+        {
+            await Api.ChangeReservationStatusAsync(r.Id, newStatus);
+            success = $"Reservation #{r.Id} is now {newStatus}.";
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+}

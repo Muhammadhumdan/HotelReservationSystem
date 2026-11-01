@@ -1,0 +1,117 @@
+@page "/admin/customers"
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<PageTitle>Customers</PageTitle>
+<RequireRole Role="admin">
+    <h1>Customers</h1>
+    <Notice Error="@error" Success="@success" />
+
+    <section class="panel">
+        <h2>@(editingId is null ? "Add a customer" : "Edit customer")</h2>
+        <EditForm Model="form" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="form-grid">
+                <label>Full name <InputText @bind-Value="form.FullName" /></label>
+                <label>Email <InputText type="email" @bind-Value="form.Email" /></label>
+                <label>Phone <InputText @bind-Value="form.Phone" /></label>
+            </div>
+            <div class="actions">
+                <button class="btn primary" type="submit">Save customer</button>
+                @if (editingId is not null)
+                {
+                    <button class="btn" type="button" @onclick="ResetForm">Cancel</button>
+                }
+            </div>
+        </EditForm>
+    </section>
+
+    <div class="filters">
+        <label>Search <input @bind="search" @bind:after="LoadAsync" placeholder="name, email or phone" /></label>
+    </div>
+
+    @if (items.Count == 0)
+    {
+        <p class="empty">No customers found.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Joined</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var c in items)
+                    {
+                        <tr>
+                            <td>@c.FullName</td>
+                            <td>@c.Email</td>
+                            <td>@c.Phone</td>
+                            <td>@DateOnly.FromDateTime(c.CreatedAt).ToString("dd MMM yyyy")</td>
+                            <td class="row-actions">
+                                <button class="btn small" @onclick="() => Edit(c)">Edit</button>
+                                <button class="btn small danger" @onclick="() => DeleteAsync(c)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</RequireRole>
+
+@code {
+    private List<CustomerDto> items = new();
+    private CustomerRequest form = new();
+    private int? editingId;
+    private string? search, error, success;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try { items = await Api.GetCustomersAsync(search); }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private async Task SaveAsync()
+    {
+        error = success = null;
+        try
+        {
+            if (editingId is null) await Api.CreateCustomerAsync(form);
+            else await Api.UpdateCustomerAsync(editingId.Value, form);
+
+            success = editingId is null ? "Customer added." : "Customer updated.";
+            ResetForm();
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+
+    private void Edit(CustomerDto c)
+    {
+        editingId = c.Id;
+        form = new CustomerRequest { FullName = c.FullName, Email = c.Email, Phone = c.Phone };
+        error = success = null;
+    }
+
+    private void ResetForm()
+    {
+        editingId = null;
+        form = new CustomerRequest();
+    }
+
+    private async Task DeleteAsync(CustomerDto c)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Delete customer '{c.FullName}'?")) return;
+        error = success = null;
+        try
+        {
+            await Api.DeleteCustomerAsync(c.Id);
+            success = "Customer deleted.";
+            await LoadAsync();
+        }
+        catch (ApiException ex) { error = ex.Message; }
+    }
+}

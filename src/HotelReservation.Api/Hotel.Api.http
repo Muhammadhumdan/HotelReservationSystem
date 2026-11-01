@@ -1,0 +1,11 @@
+### Quick API tests (open in Visual Studio: it shows a "Send request" link above each request)
+@host = https://localhost:7100
+
+### All room types
+GET {{host}}/api/roomtypes
+
+### Rooms free for a stay
+GET {{host}}/api/rooms/available?checkIn=2026-12-20&checkOut=2026-12-23&guests=2
+
+### Reservation history of customer 1
+GET {{host}}/api/reservations?customerId=1

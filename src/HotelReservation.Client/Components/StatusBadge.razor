@@ -1,0 +1,14 @@
+@* A small coloured label for a reservation status. *@
+<span class="badge @Css">@Status</span>
+
+@code {
+    [Parameter] public ReservationStatus Status { get; set; }
+
+    private string Css => Status switch
+    {
+        ReservationStatus.Confirmed => "confirmed",
+        ReservationStatus.CheckedIn => "checkedin",
+        ReservationStatus.CheckedOut => "checkedout",
+        _ => "cancelled"
+    };
+}

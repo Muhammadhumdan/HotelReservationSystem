@@ -1,0 +1,15 @@
+@inherits LayoutComponentBase
+@inject SessionState Session
+
+<header class="topbar">
+    <NavLink class="brand" href="" Match="NavLinkMatch.All">Margalla Stay</NavLink>
+    <NavMenu />
+</header>
+
+<main class="content">
+    @Body
+</main>
+
+@code {
+    protected override async Task OnInitializedAsync() => await Session.EnsureInitializedAsync();
+}
